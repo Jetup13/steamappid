@@ -5,3 +5,4 @@ Contains a python script to grab all your steam games (requies access token and 
 
 * How to get your Access Token & SteamID [here](https://steamapi.xpaw.me/)
 * Script made alongside chatgpt to clean up and correct issues
+* Requires `requests` python module
