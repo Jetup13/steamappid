@@ -10,11 +10,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 def sanitize_filename(name):
     original_name = name
 
-    # Fix colons stuck to letters: add space only if missing
-    name = re.sub(r'(\S):(\S)', r'\1 : \2', name)      # colon between letters
-    name = re.sub(r'(\S)\s*:\s*(\S)', r'\1 : \2', name) # ensure proper spacing
+    # 1. Replace colons with spaced dash
+    #    "A:B" -> "A - B"
+    name = re.sub(r'\s*:\s*', ' - ', name)
 
-    # Replace other illegal characters
+    # 2. Replace other forbidden Windows characters
     replacements = {
         '\\': '_',
         '/': '_',
@@ -28,11 +28,16 @@ def sanitize_filename(name):
     for bad, good in replacements.items():
         name = name.replace(bad, good)
 
-    # Remove special trademark characters
+    # 3. Remove special trademark characters
     name = re.sub(r'(\(TM\)|™|℠|®|©)', '', name, flags=re.IGNORECASE)
-    name = name.strip().rstrip('.')
 
-    # Reserved Windows names
+    # 4. Normalize whitespace
+    name = re.sub(r'\s+', ' ', name).strip()
+
+    # 5. Prevent trailing dots (illegal)
+    name = name.rstrip('.')
+
+    # 6. Reserved device names on Windows (CON, AUX, NUL, COM1…)
     reserved = {
         'CON', 'PRN', 'AUX', 'NUL',
         *(f'COM{i}' for i in range(1, 10)),
