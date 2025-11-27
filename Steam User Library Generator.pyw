@@ -305,16 +305,24 @@ def grab_all_store_games():
             break
 
         apps = data.get("response", {}).get("apps", [])
-        store_data.extend(apps)
+
+        # Only store appid + name
+        for a in apps:
+            store_data.append({
+                "appid": a.get("appid"),
+                "name": a.get("name", "")
+            })
+
         have_more = data.get("response", {}).get("have_more_results", False)
         last_appid = data.get("response", {}).get("last_appid")
 
         if not have_more:
             break
 
-    # Save cache
+    # Save trimmed JSON
     with open(store_library_file, "w", encoding="utf-8") as f:
         json.dump(store_data, f, indent=2, ensure_ascii=False)
+
     messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nSaved to:\n{store_library_file}")
 
 # === GUI ===
