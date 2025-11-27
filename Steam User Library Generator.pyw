@@ -324,11 +324,22 @@ def grab_all_store_games():
         json.dump(store_data, f, indent=2, ensure_ascii=False)
 
     messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nSaved to:\n{store_library_file}")
+    
+# === Widget ===
+
+def paste_into(entry_widget):
+    try:
+        clipboard_text = root.clipboard_get()
+        entry_widget.delete(0, tk.END)
+        entry_widget.insert(0, clipboard_text)
+    except:
+        pass
+
 
 # === GUI ===
 root = tk.Tk()
 root.title("Steam User Library Generator")
-root.geometry("500x600")
+root.geometry("500x550")
 root.resizable(False, False)
 
 download_images_var = tk.IntVar()
@@ -337,13 +348,23 @@ store_limit_var = tk.IntVar(value=0)
 
 tk.Label(root, text="Steam User Library Generator", font=("Segoe UI", 14, "bold")).pack(pady=10)
 
-tk.Label(root, text="Access Token:").pack()
-token_entry = tk.Entry(root, width=50)
-token_entry.pack(pady=5)
+token_frame = tk.Frame(root)
+token_frame.pack(pady=5)
 
-tk.Label(root, text="SteamID:").pack()
-steamid_entry = tk.Entry(root, width=50)
-steamid_entry.pack(pady=5)
+tk.Label(token_frame, text="Access Token:").pack(side="left")
+token_entry = tk.Entry(token_frame, width=40)
+token_entry.pack(side="left", padx=5)
+
+tk.Button(token_frame, text="Paste", command=lambda: paste_into(token_entry)).pack(side="left")
+
+steamid_frame = tk.Frame(root)
+steamid_frame.pack(pady=5)
+
+tk.Label(steamid_frame, text="SteamID:").pack(side="left")
+steamid_entry = tk.Entry(steamid_frame, width=40)
+steamid_entry.pack(side="left", padx=5)
+
+tk.Button(steamid_frame, text="Paste", command=lambda: paste_into(steamid_entry)).pack(side="left")
 
 tk.Button(root, text="Grab User Steam Library", command=grab_user_library, width=40).pack(pady=10)
 tk.Button(root, text="Generate ES-DE Files", command=generate_esde_files, width=40).pack(pady=5)
@@ -355,9 +376,9 @@ tk.Label(root, text="Image Quality:").pack()
 tk.Radiobutton(root, text="Low Quality", variable=image_quality_var, value="low").pack()
 tk.Radiobutton(root, text="High Quality", variable=image_quality_var, value="high").pack()
 
-tk.Label(root, text="--- Steam Store Options ---", font=("Segoe UI", 12, "bold")).pack(pady=10)
+tk.Label(root, text="--- Steam Store Options ---\n (Advanced options)", font=("Segoe UI", 12, "bold")).pack(pady=10)
 tk.Button(root, text="Grab All Steam Store Games", command=grab_all_store_games, width=40).pack(pady=5)
-tk.Button(root, text="Generate ES-DE Store Files", command=generate_store_esde_files, width=40).pack(pady=5)
-tk.Button(root, text="Generate Daijishou Store Files", command=generate_store_daijishou_files, width=40).pack(pady=5)
+tk.Button(root, text="Generate ES-DE Files", command=generate_store_esde_files, width=40).pack(pady=5)
+tk.Button(root, text="Generate Daijishou Files", command=generate_store_daijishou_files, width=40).pack(pady=5)
 
 root.mainloop()
