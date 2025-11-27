@@ -3,18 +3,26 @@ import json
 import os
 import re
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
+from tkinter.simpledialog import askinteger
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# === Globals ===
+steam_data = []
+store_data = []
+changes_log = []
+output_dir = os.getcwd()
+user_library_file = os.path.join(output_dir, "user_steam_games.json")
+store_library_file = os.path.join(output_dir, "all_steam_store_games.json")
 
 # === Sanitize Function ===
 def sanitize_filename(name):
     original_name = name
 
-    # 1. Replace colons with spaced dash
-    #    "A:B" -> "A - B"
+    # Replace colon with spaced dash
     name = re.sub(r'\s*:\s*', ' - ', name)
 
-    # 2. Replace other forbidden Windows characters
+    # Replace other forbidden Windows characters
     replacements = {
         '\\': '_',
         '/': '_',
@@ -28,16 +36,16 @@ def sanitize_filename(name):
     for bad, good in replacements.items():
         name = name.replace(bad, good)
 
-    # 3. Remove special trademark characters
+    # Remove special trademark characters
     name = re.sub(r'(\(TM\)|™|℠|®|©)', '', name, flags=re.IGNORECASE)
 
-    # 4. Normalize whitespace
+    # Normalize spaces
     name = re.sub(r'\s+', ' ', name).strip()
 
-    # 5. Prevent trailing dots (illegal)
+    # Prevent trailing dots
     name = name.rstrip('.')
 
-    # 6. Reserved device names on Windows (CON, AUX, NUL, COM1…)
+    # Reserved device names on Windows
     reserved = {
         'CON', 'PRN', 'AUX', 'NUL',
         *(f'COM{i}' for i in range(1, 10)),
@@ -49,17 +57,21 @@ def sanitize_filename(name):
     changed = name != original_name
     return name, changed
 
-# === Globals ===
-steam_data = []
-store_data = []
-changes_log = []
-output_dir = os.getcwd()
-user_library_file = os.path.join(output_dir, "user_steam_games.json")
-store_cache_file = os.path.join(output_dir, "all_steam_store_games.json")
-
-# === Steam Library Functions ===
+# === Button Functions ===
 def grab_user_library():
     global steam_data
+
+    # Load cached if exists
+    if os.path.exists(user_library_file):
+        try:
+            with open(user_library_file, "r", encoding="utf-8") as f:
+                steam_data = json.load(f)
+            messagebox.showinfo("Loaded", f"Loaded cached user library:\n{user_library_file}")
+            return
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load cached user library:\n{e}")
+            return
+
     token = token_entry.get().strip()
     steamid = steamid_entry.get().strip()
     if not token or not steamid:
@@ -86,7 +98,7 @@ def grab_user_library():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to download library:\n{e}")
 
-# === Image Download Functions ===
+# === Image Download Helper for ThreadPool ===
 def download_single_image(app, quality, covers_folder):
     name = app.get("name", "").strip()
     appid = app.get("appid")
@@ -96,6 +108,7 @@ def download_single_image(app, quality, covers_folder):
 
     sanitized_name, _ = sanitize_filename(name)
 
+    # Construct image URL
     if quality == "high":
         base, ext = os.path.splitext(capsule_filename)
         image_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/{base}_2x{ext}"
@@ -113,6 +126,7 @@ def download_single_image(app, quality, covers_folder):
         changes_log.append(f"FAILED TO DOWNLOAD IMAGE: {sanitized_name} ({e})")
     return None
 
+# === Download Images Function (Parallel) ===
 def download_images():
     global steam_data
     if not steam_data:
@@ -133,45 +147,25 @@ def download_images():
 
     messagebox.showinfo("Done", f"Downloaded {count} images to:\n{covers_folder}")
 
-# === File Generation Functions ===
-def generate_files(mode="esde", data_source=None, log_prefix=""):
-    global changes_log
-    if data_source is None:
-        messagebox.showerror("Error", "No data provided for file generation.")
+# === Generate Files Function ===
+def generate_files(mode="esde", use_store=False, limit=None):
+    global changes_log, steam_data, store_data
+    data_source = store_data if use_store else steam_data
+
+    if not data_source:
+        messagebox.showerror("Error", "No Steam library loaded.")
         return
 
-    folder_name = "steam" if mode == "esde" else "steam_daijishou"
-    if log_prefix == "store":
-        folder_name = "steam_store" if mode == "esde" else "steam_store_daijishou"
-
-    # For store files, ask user how many to generate
-    limit = len(data_source)
-    if log_prefix == "store":
-        total_games = len(data_source)
-        limit = simpledialog.askinteger(
-            "Generate Store Files",
-            f"Total store games: {total_games}\nEnter number of files to generate (0 = all):",
-            minvalue=0,
-            maxvalue=total_games
-        )
-        if limit is None:
-            return
-        if limit == 0:
-            limit = total_games
-        if limit > 5000:
-            proceed = messagebox.askyesno(
-                "Warning",
-                f"You are about to generate {limit} files. This may take a long time and use a lot of disk space. Continue?"
-            )
-            if not proceed:
-                return
-
+    folder_name = "steam_store" if use_store else ("steam" if mode == "esde" else "steam_daijishou")
     output_folder = os.path.join(output_dir, folder_name)
     os.makedirs(output_folder, exist_ok=True)
     changes_log = []
     name_check = {}
 
-    for app in data_source[:limit]:
+    if use_store and limit:
+        data_source = data_source[:limit]
+
+    for app in data_source:
         name = app.get("name", "").strip()
         appid = app.get("appid", 0)
         if not name:
@@ -205,85 +199,123 @@ def generate_files(mode="esde", data_source=None, log_prefix=""):
         except Exception as e:
             changes_log.append(f"FAILED TO CREATE: {final_name} ({e})")
 
-    # Save log
-    log_file = f"changednames{('_' + log_prefix) if log_prefix else ''}.txt"
-    log_path = os.path.join(output_dir, log_file)
+    # Save unified change log
+    log_path = os.path.join(output_dir, "changednames.txt")
     with open(log_path, "w", encoding="utf-8") as log:
         if changes_log:
             log.write("\n".join(changes_log))
         else:
             log.write("No filenames required sanitization or renaming.\n")
 
-    msg_label = "ES-DE" if mode == "esde" else "Daijishou"
+    # Download images in parallel (only for user library)
+    if download_images_var.get() and not use_store:
+        download_images()
+
+    msg_label = "Store" if use_store else ("ES-DE" if mode == "esde" else "Daijishou")
     messagebox.showinfo("Done", f"Generated {len(name_check)} {msg_label} files.\nLog: {log_path}")
 
+# === Wrapper Functions for User Library Buttons ===
 def generate_esde_files():
-    generate_files("esde", steam_data)
+    generate_files("esde", use_store=False)
 
 def generate_daijishou_files():
-    generate_files("daijishou", steam_data)
+    generate_files("daijishou", use_store=False)
 
+# === Store Confirmation Dialog ===
+def confirm_store_generation():
+    if not store_data:
+        messagebox.showerror("Error", "Please grab the Steam Store list first.")
+        return None
+
+    total_games = len(store_data)
+    warning = f"You are about to generate files for {total_games} store games.\n"
+    warning += "This can take a very long time and use a lot of disk space.\n"
+    warning += "Do you want to limit the number of games generated?"
+
+    # Ask Yes / No / Cancel
+    result = messagebox.askyesnocancel("Warning", warning)
+    if result is None:  # Cancel
+        return None
+    elif result:  # Yes -> limit files
+        limit = askinteger("Limit Store Files",
+                            "Enter the maximum number of games to generate:",
+                            initialvalue=1000,
+                            minvalue=1,
+                            maxvalue=total_games)
+        return limit
+    else:  # No -> proceed with all, but ask extra confirmations
+        # First confirmation
+        if not messagebox.askyesno("Are you sure?", "You are about to generate ALL store files. Are you really sure?"):
+            return None
+        # Optional second confirmation
+        if not messagebox.askyesno("Final confirmation", "This will generate potentially hundreds of thousands of files and may take hours. Continue?"):
+            return None
+        return total_games  # proceed with all files
+
+
+# === Store File Buttons ===
 def generate_store_esde_files():
-    generate_files("esde", store_data, log_prefix="store")
+    limit = confirm_store_generation()
+    if limit is None:
+        return
+    generate_files("esde", use_store=True, limit=limit)
 
 def generate_store_daijishou_files():
-    generate_files("daijishou", store_data, log_prefix="store")
+    limit = confirm_store_generation()
+    if limit is None:
+        return
+    generate_files("daijishou", use_store=True, limit=limit)
 
-# === Grab All Store Games with cache and incremental updates ===
-def grab_all_store_games(force_refresh=False):
+# === Grab All Store Games ===
+def grab_all_store_games():
     global store_data
+
+    # Load cached if exists
+    if os.path.exists(store_library_file):
+        try:
+            with open(store_library_file, "r", encoding="utf-8") as f:
+                store_data = json.load(f)
+            messagebox.showinfo("Loaded", f"Loaded cached full store list:\n{store_library_file}")
+            return
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load cached store list:\n{e}")
+            return
+
     token = token_entry.get().strip()
     if not token:
-        messagebox.showerror("Error", "Please enter your Access Token.")
+        messagebox.showerror("Error", "Please enter Access Token for store API.")
         return
 
-    # Load cache if available
-    if os.path.exists(store_cache_file) and not force_refresh:
-        use_cache = messagebox.askyesno("Cache Found", "Cached store list found. Use cached version?")
-        if use_cache:
-            with open(store_cache_file, "r", encoding="utf-8") as f:
-                store_data = json.load(f)
-            messagebox.showinfo("Info", f"Loaded {len(store_data)} games from cache.")
-            # Determine last appid from cache
-            last_appid = max((app.get("appid", 0) for app in store_data), default=0)
-            more_results = True
-        else:
-            store_data = []
-            last_appid = 0
-            more_results = True
-    else:
-        store_data = []
-        last_appid = 0
-        more_results = True
+    url_base = f"https://api.steampowered.com/IStoreService/GetAppList/v1/?access_token={token}&include_games=true"
+    store_data = []
+    last_appid = None
+    messagebox.showinfo("Info", "Downloading full Steam store list. This may take a long time.")
 
-    try:
-        while more_results:
-            url = f"https://api.steampowered.com/IStoreService/GetAppList/v1/?access_token={token}&include_games=true"
-            if last_appid > 0:
-                url += f"&last_appid={last_appid}"
+    while True:
+        url = url_base
+        if last_appid:
+            url += f"&last_appid={last_appid}"
 
+        try:
             r = requests.get(url, timeout=60)
+            r.raise_for_status()
             data = r.json()
-            apps = data.get("response", {}).get("apps", [])
-            more_results = data.get("response", {}).get("have_more_results", False)
-            last_appid = data.get("response", {}).get("last_appid", last_appid)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to download store data:\n{e}")
+            break
 
-            for app in apps:
-                # Avoid duplicates in case cache already has some
-                if all(existing.get("appid") != app.get("appid") for existing in store_data):
-                    store_data.append({
-                        "appid": app.get("appid"),
-                        "name": app.get("name", "")
-                    })
+        apps = data.get("response", {}).get("apps", [])
+        store_data.extend(apps)
+        have_more = data.get("response", {}).get("have_more_results", False)
+        last_appid = data.get("response", {}).get("last_appid")
 
-        # Save cache
-        with open(store_cache_file, "w", encoding="utf-8") as f:
-            json.dump(store_data, f, indent=2, ensure_ascii=False)
+        if not have_more:
+            break
 
-        messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nCached at:\n{store_cache_file}")
-
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to download store games:\n{e}")
+    # Save cache
+    with open(store_library_file, "w", encoding="utf-8") as f:
+        json.dump(store_data, f, indent=2, ensure_ascii=False)
+    messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nSaved to:\n{store_library_file}")
 
 # === GUI ===
 root = tk.Tk()
@@ -291,9 +323,9 @@ root.title("Steam User Library Generator")
 root.geometry("500x600")
 root.resizable(False, False)
 
-# === Tk Variables must be created after root ===
-download_images_var = tk.IntVar()  # 0 = no, 1 = yes
-image_quality_var = tk.StringVar(value="high")  # 'low' or 'high'
+download_images_var = tk.IntVar()
+image_quality_var = tk.StringVar(value="high")
+store_limit_var = tk.IntVar(value=0)
 
 tk.Label(root, text="Steam User Library Generator", font=("Segoe UI", 14, "bold")).pack(pady=10)
 
@@ -315,10 +347,8 @@ tk.Label(root, text="Image Quality:").pack()
 tk.Radiobutton(root, text="Low Quality", variable=image_quality_var, value="low").pack()
 tk.Radiobutton(root, text="High Quality", variable=image_quality_var, value="high").pack()
 
-# === Steam Store Section ===
-tk.Label(root, text="--- Steam Store Games ---", font=("Segoe UI", 12, "bold")).pack(pady=10)
-tk.Button(root, text="Grab All Store Games", command=grab_all_store_games, width=40).pack(pady=5)
-tk.Button(root, text="Force Full Refresh Store List", command=lambda: grab_all_store_games(force_refresh=True), width=40).pack(pady=5)
+tk.Label(root, text="--- Steam Store Options ---", font=("Segoe UI", 12, "bold")).pack(pady=10)
+tk.Button(root, text="Grab All Steam Store Games", command=grab_all_store_games, width=40).pack(pady=5)
 tk.Button(root, text="Generate ES-DE Store Files", command=generate_store_esde_files, width=40).pack(pady=5)
 tk.Button(root, text="Generate Daijishou Store Files", command=generate_store_daijishou_files, width=40).pack(pady=5)
 
