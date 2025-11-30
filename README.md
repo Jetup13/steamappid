@@ -16,4 +16,4 @@ Please use the `SteamGameSearch.html` file along with `all_steam_store_games.jso
 * Search for game
 * Select game
 * Select ES-DE or Daijishou button to generate file
-* PS if it generates a file as with a .txt file extension please rename and remove `.txt` at the end
+* PS if it generates a file as with a `.txt` file extension please rename and remove `.txt` at the end
