@@ -3,9 +3,10 @@ import json
 import os
 import re
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from tkinter.simpledialog import askinteger
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # === Globals ===
 steam_data = []
@@ -37,7 +38,7 @@ def sanitize_filename(name):
         name = name.replace(bad, good)
 
     # Remove special trademark characters
-    name = re.sub(r'(\(TM\)|™|℠|®|©)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'(\(TM\)|™|â„ |®|©)', '', name, flags=re.IGNORECASE)
 
     # Normalize spaces
     name = re.sub(r'\s+', ' ', name).strip()
@@ -56,6 +57,39 @@ def sanitize_filename(name):
 
     changed = name != original_name
     return name, changed
+
+# === Progress Window ===
+class ProgressWindow:
+    def __init__(self, parent, title, max_value=100):
+        self.window = tk.Toplevel(parent)
+        self.window.title(title)
+        self.window.geometry("400x120")
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self.window.grab_set()
+        
+        self.label = tk.Label(self.window, text="Starting...", font=("Segoe UI", 10))
+        self.label.pack(pady=10)
+        
+        self.progress = ttk.Progressbar(self.window, length=350, mode='determinate', maximum=max_value)
+        self.progress.pack(pady=10)
+        
+        self.cancel_requested = False
+        self.cancel_btn = tk.Button(self.window, text="Cancel", command=self.request_cancel)
+        self.cancel_btn.pack(pady=5)
+        
+    def update(self, value, text=None):
+        self.progress['value'] = value
+        if text:
+            self.label.config(text=text)
+        self.window.update()
+        
+    def request_cancel(self):
+        self.cancel_requested = True
+        self.cancel_btn.config(state='disabled', text="Cancelling...")
+        
+    def close(self):
+        self.window.destroy()
 
 # === Button Functions ===
 def grab_user_library():
@@ -78,25 +112,39 @@ def grab_user_library():
         messagebox.showerror("Error", "Please enter both Access Token and SteamID.")
         return
 
-    url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?access_token={token}&steamid={steamid}&include_appinfo=true&include_played_free_games=true&include_free_sub=false&include_extended_appinfo=true"
-    try:
-        messagebox.showinfo("Info", "Downloading user Steam library...")
-        r = requests.get(url, timeout=60)
-        data = r.json()
-        games = data.get("response", {}).get("games", [])
-        steam_data = []
-        for g in games:
-            steam_data.append({
-                "appid": g.get("appid"),
-                "name": g.get("name", ""),
-                "capsule_filename": g.get("capsule_filename", "")
-            })
-        # Save user library
-        with open(user_library_file, "w", encoding="utf-8") as f:
-            json.dump(steam_data, f, indent=2, ensure_ascii=False)
-        messagebox.showinfo("Success", f"Downloaded {len(steam_data)} games. Saved to:\n{user_library_file}")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to download library:\n{e}")
+    def download_task():
+        url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?access_token={token}&steamid={steamid}&include_appinfo=true&include_played_free_games=true&include_free_sub=false&include_extended_appinfo=true"
+        progress = ProgressWindow(root, "Downloading User Library")
+        progress.update(30, "Contacting Steam API...")
+        
+        try:
+            r = requests.get(url, timeout=60)
+            progress.update(60, "Processing data...")
+            data = r.json()
+            games = data.get("response", {}).get("games", [])
+            global steam_data
+            steam_data = []
+            for g in games:
+                steam_data.append({
+                    "appid": g.get("appid"),
+                    "name": g.get("name", ""),
+                    "capsule_filename": g.get("capsule_filename", "")
+                })
+            
+            progress.update(90, "Saving to file...")
+            # Save user library
+            with open(user_library_file, "w", encoding="utf-8") as f:
+                json.dump(steam_data, f, indent=2, ensure_ascii=False)
+            
+            progress.update(100, "Complete!")
+            progress.close()
+            messagebox.showinfo("Success", f"Downloaded {len(steam_data)} games. Saved to:\n{user_library_file}")
+        except Exception as e:
+            progress.close()
+            messagebox.showerror("Error", f"Failed to download library:\n{e}")
+    
+    thread = threading.Thread(target=download_task, daemon=True)
+    thread.start()
 
 # === Image Download Helper for ThreadPool ===
 def download_single_image(app, quality, covers_folder):
@@ -108,6 +156,11 @@ def download_single_image(app, quality, covers_folder):
 
     sanitized_name, _ = sanitize_filename(name)
 
+    # Check if already exists
+    img_path = os.path.join(covers_folder, f"{sanitized_name}.jpg")
+    if os.path.exists(img_path):
+        return sanitized_name
+
     # Construct image URL
     if quality == "high":
         base, ext = os.path.splitext(capsule_filename)
@@ -115,7 +168,6 @@ def download_single_image(app, quality, covers_folder):
     else:
         image_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/{capsule_filename}"
 
-    img_path = os.path.join(covers_folder, f"{sanitized_name}.jpg")
     try:
         r = requests.get(image_url, timeout=30)
         if r.status_code == 200:
@@ -126,93 +178,127 @@ def download_single_image(app, quality, covers_folder):
         changes_log.append(f"FAILED TO DOWNLOAD IMAGE: {sanitized_name} ({e})")
     return None
 
-# === Download Images Function (Parallel) ===
-def download_images():
+# === Download Images Function (Parallel with Progress) ===
+def download_images_with_progress(progress_window):
     global steam_data
     if not steam_data:
-        messagebox.showerror("Error", "No Steam library loaded.")
-        return
+        return 0
 
     covers_folder = os.path.join(output_dir, "covers")
     os.makedirs(covers_folder, exist_ok=True)
     count = 0
+    total = len(steam_data)
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(download_single_image, app, image_quality_var.get(), covers_folder)
                    for app in steam_data]
-        for future in as_completed(futures):
+        
+        for i, future in enumerate(as_completed(futures)):
+            if progress_window and progress_window.cancel_requested:
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
             result = future.result()
             if result:
                 count += 1
+            if progress_window:
+                progress_window.update(i + 1, f"Downloading images: {i + 1}/{total}")
 
-    messagebox.showinfo("Done", f"Downloaded {count} images to:\n{covers_folder}")
+    return count
 
 # === Generate Files Function ===
 def generate_files(mode="esde", use_store=False, limit=None):
     global changes_log, steam_data, store_data
-    data_source = store_data if use_store else steam_data
+    
+    def generate_task():
+        data_source = store_data if use_store else steam_data
 
-    if not data_source:
-        messagebox.showerror("Error", "No Steam library loaded.")
-        return
+        if not data_source:
+            messagebox.showerror("Error", "No Steam library loaded.")
+            return
 
-    folder_name = "steam_store" if use_store else ("steam" if mode == "esde" else "steam_daijishou")
-    output_folder = os.path.join(output_dir, folder_name)
-    os.makedirs(output_folder, exist_ok=True)
-    changes_log = []
-    name_check = {}
+        folder_name = "steam_store" if use_store else ("steam" if mode == "esde" else "steam_daijishou")
+        output_folder = os.path.join(output_dir, folder_name)
+        os.makedirs(output_folder, exist_ok=True)
+        global changes_log
+        changes_log = []
+        name_check = {}
 
-    if use_store and limit:
-        data_source = data_source[:limit]
+        if use_store and limit:
+            data_source = data_source[:limit]
 
-    for app in data_source:
-        name = app.get("name", "").strip()
-        appid = app.get("appid", 0)
-        if not name:
-            continue
+        total_items = len(data_source)
+        should_download_images = download_images_var.get() and not use_store
+        
+        # Adjust progress max based on whether we're downloading images
+        progress_max = total_items + (total_items if should_download_images else 0)
+        progress = ProgressWindow(root, "Generating Files", max_value=progress_max)
+        
+        for idx, app in enumerate(data_source):
+            if progress.cancel_requested:
+                break
+                
+            name = app.get("name", "").strip()
+            appid = app.get("appid", 0)
+            if not name:
+                continue
 
-        sanitized, changed = sanitize_filename(name)
+            sanitized, changed = sanitize_filename(name)
 
-        # Handle duplicates
-        final_name = sanitized
-        counter = 1
-        while final_name.lower() in name_check:
-            counter += 1
-            final_name = f"{sanitized} ({counter})"
-            changed = True
-        name_check[final_name.lower()] = True
+            # Handle duplicates
+            final_name = sanitized
+            counter = 1
+            while final_name.lower() in name_check:
+                counter += 1
+                final_name = f"{sanitized} ({counter})"
+                changed = True
+            name_check[final_name.lower()] = True
 
-        if changed:
-            changes_log.append(f"{name} -> {final_name}")
+            if changed:
+                changes_log.append(f"{name} -> {final_name}")
 
-        if mode == "esde":
-            file_ext = ".steam"
-            content = str(appid)
+            if mode == "esde":
+                file_ext = ".steam"
+                content = str(appid)
+            else:
+                file_ext = ".steamappid"
+                content = f"# Daijishou Player Template\n[steamappid] {appid}\n..."
+
+            file_path = os.path.join(output_folder, f"{final_name}{file_ext}")
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except Exception as e:
+                changes_log.append(f"FAILED TO CREATE: {final_name} ({e})")
+            
+            progress.update(idx + 1, f"Creating files: {idx + 1}/{total_items}")
+
+        # Save unified change log
+        log_path = os.path.join(output_dir, "changednames.txt")
+        with open(log_path, "w", encoding="utf-8") as log:
+            if changes_log:
+                log.write("\n".join(changes_log))
+            else:
+                log.write("No filenames required sanitization or renaming.\n")
+
+        # Download images in parallel (only for user library)
+        image_count = 0
+        if should_download_images and not progress.cancel_requested:
+            progress.label.config(text="Downloading images...")
+            image_count = download_images_with_progress(progress)
+
+        progress.close()
+        
+        if progress.cancel_requested:
+            messagebox.showwarning("Cancelled", "Operation was cancelled by user.")
         else:
-            file_ext = ".steamappid"
-            content = f"# Daijishou Player Template\n[steamappid] {appid}\n..."
-
-        file_path = os.path.join(output_folder, f"{final_name}{file_ext}")
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            changes_log.append(f"FAILED TO CREATE: {final_name} ({e})")
-
-    # Save unified change log
-    log_path = os.path.join(output_dir, "changednames.txt")
-    with open(log_path, "w", encoding="utf-8") as log:
-        if changes_log:
-            log.write("\n".join(changes_log))
-        else:
-            log.write("No filenames required sanitization or renaming.\n")
-
-    # Download images in parallel (only for user library)
-    if download_images_var.get() and not use_store:
-        download_images()
-
-    msg_label = "Store" if use_store else ("ES-DE" if mode == "esde" else "Daijishou")
-    messagebox.showinfo("Done", f"Generated {len(name_check)} {msg_label} files.\nLog: {log_path}")
+            msg_label = "Store" if use_store else ("ES-DE" if mode == "esde" else "Daijishou")
+            result_msg = f"Generated {len(name_check)} {msg_label} files.\nLog: {log_path}"
+            if image_count > 0:
+                result_msg += f"\n\nDownloaded {image_count} images."
+            messagebox.showinfo("Done", result_msg)
+    
+    thread = threading.Thread(target=generate_task, daemon=True)
+    thread.start()
 
 # === Wrapper Functions for User Library Buttons ===
 def generate_esde_files():
@@ -286,47 +372,71 @@ def grab_all_store_games():
         messagebox.showerror("Error", "Please enter Access Token for store API.")
         return
 
-    url_base = f"https://api.steampowered.com/IStoreService/GetAppList/v1/?access_token={token}&include_games=true"
-    store_data = []
-    last_appid = None
-    messagebox.showinfo("Info", "Downloading full Steam store list. This may take a long time.")
-
-    while True:
-        url = url_base
-        if last_appid:
-            url += f"&last_appid={last_appid}"
+    def download_store_task():
+        url_base = f"https://api.steampowered.com/IStoreService/GetAppList/v1/?access_token={token}&include_games=true"
+        global store_data
+        store_data = []
+        last_appid = None
+        
+        progress = ProgressWindow(root, "Downloading Store Games", max_value=100)
+        progress.progress.config(mode='indeterminate')
+        progress.progress.start()
+        batch_count = 0
 
         try:
-            r = requests.get(url, timeout=60)
-            r.raise_for_status()
-            data = r.json()
+            while True:
+                if progress.cancel_requested:
+                    break
+                    
+                url = url_base
+                if last_appid:
+                    url += f"&last_appid={last_appid}"
+
+                batch_count += 1
+                progress.update(0, f"Downloading batch {batch_count}... ({len(store_data)} games so far)")
+                
+                r = requests.get(url, timeout=60)
+                r.raise_for_status()
+                data = r.json()
+
+                apps = data.get("response", {}).get("apps", [])
+
+                # Only store appid + name
+                for a in apps:
+                    store_data.append({
+                        "appid": a.get("appid"),
+                        "name": a.get("name", "")
+                    })
+
+                have_more = data.get("response", {}).get("have_more_results", False)
+                last_appid = data.get("response", {}).get("last_appid")
+
+                if not have_more:
+                    break
+
+            progress.progress.stop()
+            progress.progress.config(mode='determinate')
+            progress.update(100, "Saving to file...")
+            
+            # Save trimmed JSON
+            with open(store_library_file, "w", encoding="utf-8") as f:
+                json.dump(store_data, f, indent=2, ensure_ascii=False)
+
+            progress.close()
+            
+            if progress.cancel_requested:
+                messagebox.showwarning("Cancelled", f"Downloaded {len(store_data)} games before cancellation.")
+            else:
+                messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nSaved to:\n{store_library_file}")
+                
         except Exception as e:
+            progress.close()
             messagebox.showerror("Error", f"Failed to download store data:\n{e}")
-            break
-
-        apps = data.get("response", {}).get("apps", [])
-
-        # Only store appid + name
-        for a in apps:
-            store_data.append({
-                "appid": a.get("appid"),
-                "name": a.get("name", "")
-            })
-
-        have_more = data.get("response", {}).get("have_more_results", False)
-        last_appid = data.get("response", {}).get("last_appid")
-
-        if not have_more:
-            break
-
-    # Save trimmed JSON
-    with open(store_library_file, "w", encoding="utf-8") as f:
-        json.dump(store_data, f, indent=2, ensure_ascii=False)
-
-    messagebox.showinfo("Success", f"Downloaded {len(store_data)} store games.\nSaved to:\n{store_library_file}")
     
-# === Widget ===
-
+    thread = threading.Thread(target=download_store_task, daemon=True)
+    thread.start()
+    
+# === Widget Helper ===
 def paste_into(entry_widget):
     try:
         clipboard_text = root.clipboard_get()
@@ -344,7 +454,6 @@ root.resizable(False, False)
 
 download_images_var = tk.IntVar()
 image_quality_var = tk.StringVar(value="high")
-store_limit_var = tk.IntVar(value=0)
 
 tk.Label(root, text="Steam User Library Generator", font=("Segoe UI", 14, "bold")).pack(pady=10)
 
