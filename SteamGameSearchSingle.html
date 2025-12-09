@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Steam Game Search</title>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial; margin: 20px; }
+  input, button { padding: 10px; font-size: 16px; }
+  #results { margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #aaa; padding: 10px; }
+  .result { padding: 5px; border-bottom: 1px solid #ddd; cursor: pointer; }
+  .result:hover { background: #eef; }
+</style>
+</head>
+
+<body>
+<h2>Steam Game Search (Offline Web Version)</h2>
+
+<button onclick="loadJSON()">Load all_steam_store_games.json</button>
+<input type="file" id="jsonFile" style="display:none" accept=".json">
+
+<br><br>
+<input type="text" id="searchBox" placeholder="Search for a game..." oninput="search()" disabled>
+
+<div id="status"></div>
+
+<div id="results"></div>
+
+<button id="genSteam" onclick="generateSteam()" disabled>Create .steam File</button>
+<button id="genSteamAppId" onclick="generateSteamAppId()" disabled>Create .steamappid File</button>
+
+<script>
+let storeData = [];
+let selectedGame = null;
+
+function loadJSON() {
+    document.getElementById("jsonFile").click();
+}
+
+document.getElementById("jsonFile").addEventListener("change", function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        storeData = JSON.parse(e.target.result);
+        document.getElementById("status").innerText = "Loaded " + storeData.length + " games.";
+        document.getElementById("searchBox").disabled = false;
+    };
+    reader.readAsText(file);
+});
+
+function search() {
+    const q = document.getElementById("searchBox").value.toLowerCase();
+    const resultsDiv = document.getElementById("results");
+    resultsDiv.innerHTML = "";
+
+    if (q.length < 2) return;
+
+    const matches = storeData.filter(g => g.name.toLowerCase().includes(q)).slice(0, 300);
+
+    matches.forEach(game => {
+        const div = document.createElement("div");
+        div.className = "result";
+        div.innerText = `${game.name} (AppID: ${game.appid})`;
+        div.onclick = () => {
+            selectedGame = game;
+            document.getElementById("genSteam").disabled = false;
+            document.getElementById("genSteamAppId").disabled = false;
+        };
+        resultsDiv.appendChild(div);
+    });
+}
+
+function downloadFile(filename, content) {
+    const blob = new Blob([content], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function sanitize(name) {
+    return name.replace(/[\\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
+}
+
+function generateSteam() {
+    if (!selectedGame) return;
+    const name = sanitize(selectedGame.name);
+    downloadFile(name + ".steam", selectedGame.appid.toString());
+}
+
+function generateSteamAppId() {
+    if (!selectedGame) return;
+    const name = sanitize(selectedGame.name);
+    const content = `# Daijishou Player Template\n[steamappid] ${selectedGame.appid}\n...`;
+    downloadFile(name + ".steamappid", content);
+}
+</script>
+</body>
+</html>
