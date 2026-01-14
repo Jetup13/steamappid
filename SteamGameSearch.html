@@ -28,10 +28,10 @@
 <body>
 <h2>Steam Game Search - Multi-Select</h2>
 
-<button onclick="loadJSON()">Load all_steam_store_games.json</button>
+<button onclick="loadJSON()">Load Local JSON File</button>
 <input type="file" id="jsonFile" style="display:none" accept=".json">
 
-<div id="status"></div>
+<div id="status">Loading games from GitHub...</div>
 
 <input type="text" id="searchBox" placeholder="Search for a game..." oninput="search()" disabled style="width: 400px;">
 
@@ -61,6 +61,29 @@
 <script>
 let storeData = [];
 let selectedGames = [];
+
+// Auto-load JSON from GitHub on page load
+window.addEventListener('DOMContentLoaded', async function() {
+    const url = 'https://raw.githubusercontent.com/Jetup13/steamappid/main/all_steam_store_games.json';
+    const statusDiv = document.getElementById("status");
+    
+    try {
+        statusDiv.innerText = "Loading games from GitHub...";
+        statusDiv.style.color = "blue";
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        storeData = await response.json();
+        statusDiv.innerText = "✓ Loaded " + storeData.length + " games from GitHub.";
+        statusDiv.style.color = "green";
+        document.getElementById("searchBox").disabled = false;
+    } catch (err) {
+        statusDiv.innerText = "✗ Error loading from GitHub. Use 'Load Local JSON File' button instead.";
+        statusDiv.style.color = "red";
+        console.error(err);
+    }
+});
 
 function loadJSON() {
     document.getElementById("jsonFile").click();
