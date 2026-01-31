@@ -405,7 +405,8 @@ def grab_all_store_games():
                 for a in apps:
                     store_data.append({
                         "appid": a.get("appid"),
-                        "name": a.get("name", "")
+                        "name": a.get("name", ""),
+                        "boxart": f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{a.get('appid')}/library_600x900.jpg"
                     })
 
                 have_more = data.get("response", {}).get("have_more_results", False)
