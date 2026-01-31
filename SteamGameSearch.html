@@ -4,6 +4,7 @@
 <title>Steam Game Search - Multi-Select</title>
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
   body { font-family: Arial; margin: 20px; }
   input, button { padding: 10px; font-size: 16px; margin: 5px; }
@@ -54,15 +55,24 @@
     <label><input type="radio" name="fileType" value="steam" checked> .steam</label>
     <label><input type="radio" name="fileType" value="steamappid"> .steamappid</label>
   </div>
+
+  <div class="file-type">
+    <label>
+      <input type="checkbox" id="downloadCovers">
+      Download cover images
+    </label>
+  </div>
   
-  <button onclick="generateZip()" id="genZip" disabled>Download ZIP of Selected Games</button>
+  <button onclick="generateZip()" id="genZip" disabled>
+    Download ZIP of Selected Games
+  </button>
 </div>
 
 <script>
 let storeData = [];
 let selectedGames = [];
 
-// Auto-load JSON from GitHub on page load
+// Auto-load JSON from GitHub
 window.addEventListener('DOMContentLoaded', async function() {
     const url = 'https://raw.githubusercontent.com/Jetup13/steamappid/main/all_steam_store_games.json';
     const statusDiv = document.getElementById("status");
@@ -79,9 +89,8 @@ window.addEventListener('DOMContentLoaded', async function() {
         statusDiv.style.color = "green";
         document.getElementById("searchBox").disabled = false;
     } catch (err) {
-        statusDiv.innerText = "✗ Error loading from GitHub. Use 'Load Local JSON File' button instead.";
+        statusDiv.innerText = "✗ Error loading from GitHub. Use 'Load Local JSON File' instead.";
         statusDiv.style.color = "red";
-        console.error(err);
     }
 });
 
@@ -100,7 +109,7 @@ document.getElementById("jsonFile").addEventListener("change", function() {
             document.getElementById("status").innerText = "✓ Loaded " + storeData.length + " games.";
             document.getElementById("status").style.color = "green";
             document.getElementById("searchBox").disabled = false;
-        } catch (err) {
+        } catch {
             document.getElementById("status").innerText = "✗ Error loading JSON file.";
             document.getElementById("status").style.color = "red";
         }
@@ -115,37 +124,33 @@ function search() {
 
     if (q.length < 2) return;
 
-    const matches = storeData.filter(g => g.name.toLowerCase().includes(q)).slice(0, 300);
-
-    matches.forEach(game => {
+    storeData
+      .filter(g => g.name.toLowerCase().includes(q))
+      .slice(0, 300)
+      .forEach(game => {
         const div = document.createElement("div");
         div.className = "result";
         
         const text = document.createElement("span");
         text.innerText = `${game.name} (AppID: ${game.appid})`;
         
-        const addBtn = document.createElement("button");
-        addBtn.className = "add-btn";
-        addBtn.innerText = "Add";
-        addBtn.onclick = (e) => {
+        const btn = document.createElement("button");
+        btn.className = "add-btn";
+        btn.innerText = "Add";
+        btn.onclick = e => {
             e.stopPropagation();
             addGame(game);
         };
         
         div.appendChild(text);
-        div.appendChild(addBtn);
+        div.appendChild(btn);
         div.onclick = () => addGame(game);
-        
         resultsDiv.appendChild(div);
     });
 }
 
 function addGame(game) {
-    // Check if already selected
-    if (selectedGames.find(g => g.appid === game.appid)) {
-        return;
-    }
-    
+    if (selectedGames.find(g => g.appid === game.appid)) return;
     selectedGames.push(game);
     updateSelectedDisplay();
 }
@@ -156,8 +161,7 @@ function removeGame(appid) {
 }
 
 function clearSelected() {
-    if (selectedGames.length === 0) return;
-    if (confirm(`Clear all ${selectedGames.length} selected games?`)) {
+    if (selectedGames.length && confirm(`Clear all ${selectedGames.length} games?`)) {
         selectedGames = [];
         updateSelectedDisplay();
     }
@@ -170,30 +174,17 @@ function updateSelectedDisplay() {
     
     countSpan.innerText = selectedGames.length;
     selectedDiv.innerHTML = "";
-    
-    if (selectedGames.length === 0) {
-        selectedDiv.innerHTML = "<p style='color: #999;'>No games selected yet.</p>";
-        genZipBtn.disabled = true;
-    } else {
-        genZipBtn.disabled = false;
-        
-        selectedGames.forEach(game => {
-            const div = document.createElement("div");
-            div.className = "selected-item";
-            
-            const text = document.createElement("span");
-            text.innerText = `${game.name} (${game.appid})`;
-            
-            const removeBtn = document.createElement("button");
-            removeBtn.className = "remove-btn";
-            removeBtn.innerText = "Remove";
-            removeBtn.onclick = () => removeGame(game.appid);
-            
-            div.appendChild(text);
-            div.appendChild(removeBtn);
-            selectedDiv.appendChild(div);
-        });
-    }
+    genZipBtn.disabled = selectedGames.length === 0;
+
+    selectedGames.forEach(game => {
+        const div = document.createElement("div");
+        div.className = "selected-item";
+        div.innerHTML = `
+            <span>${game.name} (${game.appid})</span>
+            <button class="remove-btn" onclick="removeGame(${game.appid})">Remove</button>
+        `;
+        selectedDiv.appendChild(div);
+    });
 }
 
 function sanitize(name) {
@@ -201,41 +192,35 @@ function sanitize(name) {
 }
 
 async function generateZip() {
-    if (selectedGames.length === 0) return;
-    
     const fileType = document.querySelector('input[name="fileType"]:checked').value;
+    const downloadCovers = document.getElementById("downloadCovers").checked;
     const zip = new JSZip();
-    
-    selectedGames.forEach(game => {
-        const name = sanitize(game.name);
-        let content, filename;
-        
-        if (fileType === "steam") {
-            filename = name + ".steam";
-            content = game.appid.toString();
-        } else {
-            filename = name + ".steamappid";
-            content = `# Daijishou Player Template\n[steamappid] ${game.appid}\n...`;
-        }
-        
-        zip.file(filename, content);
-    });
-    
-    try {
-        const blob = await zip.generateAsync({ type: "blob" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `steam_games_${fileType}.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-    } catch (err) {
-        alert("Error generating ZIP file: " + err.message);
-    }
-}
+    const covers = downloadCovers ? zip.folder("covers") : null;
 
-// Initialize
-updateSelectedDisplay();
+    for (const game of selectedGames) {
+        const name = sanitize(game.name);
+        zip.file(
+            name + "." + fileType,
+            fileType === "steam"
+                ? game.appid.toString()
+                : `# Daijishou Player Template\n[steamappid] ${game.appid}\n...`
+        );
+
+        if (downloadCovers && game.boxart) {
+            try {
+                const r = await fetch(game.boxart);
+                if (r.ok) covers.file(name + ".jpg", await r.blob());
+            } catch {}
+        }
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `steam_games_${fileType}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
 </script>
 </body>
 </html>
