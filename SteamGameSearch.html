@@ -52,8 +52,8 @@
 <div class="controls">
   <div class="file-type">
     <strong>File Type:</strong>
-    <label><input type="radio" name="fileType" value="steam" checked> .steam</label>
-    <label><input type="radio" name="fileType" value="steamappid"> .steamappid</label>
+    <label><input type="radio" name="fileType" value="steam" checked> .steam (ES-DE)</label>
+    <label><input type="radio" name="fileType" value="steamappid"> .steamappid (Daijishou)</label>
   </div>
 
   <div class="file-type">
@@ -217,7 +217,8 @@ async function generateZip() {
     const blob = await zip.generateAsync({ type: "blob" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `steam_games_${fileType}.zip`;
+    const zipName = fileType === "steam" ? "steam_es-de" : "steamappid_daijishou";
+    a.download = `${zipName}.zip`;
     a.click();
     URL.revokeObjectURL(a.href);
 }
