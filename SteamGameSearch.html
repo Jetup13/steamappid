@@ -1,19 +1,46 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Steam Game Search - Multi-Select</title>
+<title>Steam Frontend File Generator</title>
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-  body { font-family: Arial; margin: 20px; }
-  input, button { padding: 10px; font-size: 16px; margin: 5px; }
+  :root {
+    --bg: #ffffff;
+    --bg-secondary: #f0f8ff;
+    --text: #111111;
+    --border: #aaaaaa;
+    --border-light: #dddddd;
+    --input-bg: #ffffff;
+    --box-bg: #ffffff;
+    --result-hover: #eef0ff;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a;
+      --bg-secondary: #1e2a35;
+      --text: #e8e8e8;
+      --border: #444444;
+      --border-light: #333333;
+      --input-bg: #2a2a2a;
+      --box-bg: #242424;
+      --result-hover: #2a2a3a;
+    }
+  }
+
+  body { font-family: Arial; margin: 20px; background: var(--bg); color: var(--text); }
+  input[type="text"] { padding: 10px; font-size: 16px; margin: 5px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 3px; }
+  button { padding: 10px; font-size: 16px; margin: 5px; cursor: pointer; border-radius: 3px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); }
+  button:hover { opacity: 0.85; }
+  input[type="radio"], input[type="checkbox"] { accent-color: #4CAF50; }
   .container { display: flex; gap: 20px; margin-top: 20px; }
-  .box { flex: 1; max-height: 400px; overflow-y: auto; border: 1px solid #aaa; padding: 10px; }
-  .box h3 { margin-top: 0; }
-  .result { padding: 8px; border-bottom: 1px solid #ddd; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-  .result:hover { background: #eef; }
-  .selected-item { padding: 8px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; background: #f0f8ff; }
+  .box { flex: 1; max-height: 400px; overflow-y: auto; border: 1px solid var(--border); padding: 10px; background: var(--box-bg); border-radius: 4px; }
+  .box h3 { margin-top: 0; color: var(--text); }
+  .result { padding: 8px; border-bottom: 1px solid var(--border-light); cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: var(--text); }
+  .result:hover { background: var(--result-hover); }
+  .selected-item { padding: 8px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary); color: var(--text); }
   .remove-btn { background: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; font-size: 12px; }
   .remove-btn:hover { background: #cc0000; }
   .add-btn { background: #4CAF50; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; font-size: 12px; }
@@ -21,13 +48,13 @@
   .controls { margin-top: 15px; }
   .file-type { margin: 10px 0; }
   #status { margin: 10px 0; font-weight: bold; }
-  .clear-btn { background: #ff9800; color: white; }
+  .clear-btn { background: #ff9800; color: white; border: none; }
   .clear-btn:hover { background: #e68900; }
 </style>
 </head>
 
 <body>
-<h2>Steam Game Search - Multi-Select</h2>
+<h2>Steam Frontend File Generator</h2>
 
 <button onclick="loadJSON()">Load Local JSON File</button>
 <input type="file" id="jsonFile" style="display:none" accept=".json">
@@ -64,7 +91,7 @@
   </div>
   
   <button onclick="generateZip()" id="genZip" disabled>
-    Download ZIP of Selected Games
+    Generate ZIP
   </button>
 </div>
 
@@ -78,18 +105,18 @@ window.addEventListener('DOMContentLoaded', async function() {
     const statusDiv = document.getElementById("status");
     
     try {
-        statusDiv.innerText = "Loading games from GitHub...";
+        statusDiv.innerText = "Loading games from GitHub JSON...";
         statusDiv.style.color = "blue";
         
         const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to fetch');
         
         storeData = await response.json();
-        statusDiv.innerText = "✓ Loaded " + storeData.length + " games from GitHub.";
+        statusDiv.innerText = "✓ Auto loaded " + storeData.length + " games from GitHub JSON.";
         statusDiv.style.color = "green";
         document.getElementById("searchBox").disabled = false;
     } catch (err) {
-        statusDiv.innerText = "✗ Error loading from GitHub. Use 'Load Local JSON File' instead.";
+        statusDiv.innerText = "✗ Error loading from GitHub JSON. Use 'Load Local JSON File' instead.";
         statusDiv.style.color = "red";
     }
 });
