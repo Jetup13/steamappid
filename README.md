@@ -1,19 +1,20 @@
 # steamappid
 Steam appid list for Daijishou/ES-DE/Beacon
 
+[Direct link to tool](https://jetup13.github.io/steamappid/SteamGameSearch.html)
+
 Contains a python script to grab all your steam games (requies access token and steam) for Daijishou, ES-DE, & Beacon Steam platforms. Can also grab images of games if selected and found.
 
 * How to get your Access Token & SteamID [here](https://steamapi.xpaw.me/)
-* Script made alongside chatgpt to clean up and correct issues
+* Script made alongside claude to clean up and correct issues
 * Requires `requests` python module
 
-# How-to use:
+# How-to use
 
-1. Download HTML file 
-2. Load HTML file with browser
-3. Search & Add games
-4. Select .steam, .steamappid, download cover art options
-5. Select Download ZIP > Unzip files
+1. Open [link](https://jetup13.github.io/steamappid/SteamGameSearch.html)
+2. Search & Add games
+3. Select .steam, .steamappid, download cover art options
+4. Select Download ZIP > Unzip files
 
 # Offline usage
 
@@ -25,10 +26,10 @@ Please use the `SteamGameSearch.html` file along with `all_steam_store_games.jso
 4. Select game
 5. Select ES-DE or Daijishou button to generate file 
 
-# **ES-DE**:
+# ES-DE
 
 Unzip files into ~ROMs\steam\ or ~ROMs\windows\ folder
 
-# **Daijishou**: 
+# Daijishou
 
 Unzip files into a folder > Download Steam Platform > sync folder with Steam Platform
