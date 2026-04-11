@@ -125,9 +125,11 @@ def grab_user_library():
             global steam_data
             steam_data = []
             for g in games:
+                raw_name = g.get("name", "")
+                sanitized_name, _ = sanitize_filename(raw_name)
                 steam_data.append({
                     "appid": g.get("appid"),
-                    "name": g.get("name", ""),
+                    "name": sanitized_name,
                     "capsule_filename": g.get("capsule_filename", "")
                 })
             
@@ -403,9 +405,11 @@ def grab_all_store_games():
 
                 # Only store appid + name
                 for a in apps:
+                    raw_name = a.get("name", "")
+                    sanitized_name, _ = sanitize_filename(raw_name)
                     store_data.append({
                         "appid": a.get("appid"),
-                        "name": a.get("name", ""),
+                        "name": sanitized_name,
                         "boxart": f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{a.get('appid')}/library_600x900.jpg"
                     })
 
